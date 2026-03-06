@@ -1,23 +1,25 @@
-{
-    "bot_settings": {
-        "auto_shutdown": {
-            "enabled": true,
-            "shutdown_after_minutes": 60,
-            "shutdown_message": "🛑 البوت متوقف للحماية من الكشف - سيتم إعادة التشغيل تلقائياً"
-        },
-        "resend_timing": {
-            "minutes": 30,
-            "seconds": 0,
-            "total_seconds": 1800
-        },
-        "commands": {
-            "save_word": "احفظ",
-            "resend_command": "اعد الارسال",
-            "status_command": "حالة البوت"
-        },
-        "saved_word": {
-            "word": "",
-            "last_updated": ""
-        }
-    }
+// الكلمة التي سيرسلها البوت
+BOT_WORD: "تم استلام الطلب"
+
+// وقت التكرار (بالثواني)
+// 60 = دقيقة
+// 300 = 5 دقائق  
+// 1800 = نصف ساعة
+// 3600 = ساعة
+RESEND_TIME_SECONDS: 1800
+
+// نظام الحماية (يمنع اكتشاف البوت)
+AUTO_STOP: {
+    ENABLED: true,  // شغال
+    WORK_TIME_MINUTES: 60,   // يشتغل ساعة
+    REST_TIME_MINUTES: 180,  // يقعد 3 ساعات (يتخفى)
 }
+
+// مثال آخر:
+// يشتغل 20 دقيقة ويقعد 40 دقيقة
+WORK_TIME_MINUTES: 20,
+REST_TIME_MINUTES: 40,
+
+// يشتغل ساعتين ويقعد ساعة
+WORK_TIME_MINUTES: 120,
+REST_TIME_MINUTES: 60,
