@@ -1,8 +1,3 @@
-require('./keep_alive.js');  // <-- أضف هذا السطر
-
-const { Client } = require('discord.js-selfbot-v13');
-const config = require('./config.js');
-const client = new Client();
 const { Client } = require('discord.js-selfbot-v13');
 const config = require('./config.js');
 const client = new Client();
