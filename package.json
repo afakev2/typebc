@@ -1,17 +1,13 @@
 {
   "name": "discord-self-bot",
-  "version": "1.0.0",
-  "description": "Discord self bot for specific server",
+  "version": "2.0.0",
+  "description": "Discord self bot with config file",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js-selfbot-v13": "^3.1.4",
-    "express": "^4.18.2"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "dotenv": "^16.3.1"
   }
 }
