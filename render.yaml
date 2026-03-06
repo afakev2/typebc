@@ -1,0 +1,12 @@
+services:
+  - type: worker
+    name: discord-self-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: SERVER_ID
+        sync: false
+      - key: ORDERS_CHANNEL_ID
+        sync: false
