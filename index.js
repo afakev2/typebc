@@ -18,6 +18,7 @@ if (!config.TOKEN || !config.SERVER_ID || !config.ORDERS_CHANNEL_ID) {
 let isActive = true;
 let workInterval = null;
 let restTimeout = null;
+let messageInterval = null;
 
 // دالة إرسال الكلمة المحددة
 async function sendWord() {
@@ -69,6 +70,9 @@ function setupAutoStop() {
         const now = new Date().toLocaleTimeString('ar-EG');
         console.log(`▶️ [${now}] بدء فترة العمل - البوت يعمل`);
 
+        // إرسال رسالة فور بدء العمل
+        sendWord();
+
         // جدولة فترة الراحة بعد انتهاء العمل
         if (restTimeout) clearTimeout(restTimeout);
         restTimeout = setTimeout(() => {
@@ -94,12 +98,9 @@ client.on('ready', async () => {
     console.log(`⏱️ وقت الإرسال: ${config.RESEND_TIME_SECONDS} ثانية`);
     console.log('=================================');
 
-    // إرسال الكلمة فور التشغيل
-    await sendWord();
-
     // بدء التكرار حسب الوقت المحدد
     const intervalMs = config.RESEND_TIME_SECONDS * 1000;
-    workInterval = setInterval(sendWord, intervalMs);
+    messageInterval = setInterval(sendWord, intervalMs);
     
     console.log(`🔄 سيتم الإرسال كل ${config.RESEND_TIME_SECONDS} ثانية`);
 
@@ -107,23 +108,48 @@ client.on('ready', async () => {
     setupAutoStop();
 });
 
-// تسجيل الدخول
-client.login(config.TOKEN).catch(err => {
-    console.error('❌ فشل تسجيل الدخول:', err.message);
-    if (err.message.includes('TOKEN')) {
-        console.error('📝 تأكد من وضع التوكن الصحيح في متغيرات Render');
-    }
-    process.exit(1);
+// معالجة أخطاء الاتصال
+client.on('error', (error) => {
+    console.error('❌ خطأ في الاتصال:', error.message);
 });
+
+client.on('disconnect', () => {
+    console.log('⚠️ تم فصل الاتصال - محاولة إعادة الاتصال...');
+});
+
+// تسجيل الدخول مع معالجة أفضل للأخطاء
+async function login() {
+    try {
+        await client.login(config.TOKEN);
+    } catch (error) {
+        console.error('❌ فشل تسجيل الدخول:', error.message);
+        if (error.message.includes('TOKEN')) {
+            console.error('📝 تأكد من وضع التوكن الصحيح في متغيرات Render');
+        }
+        console.log('🔄 محاولة إعادة الاتصال بعد 10 ثواني...');
+        setTimeout(login, 10000);
+    }
+}
+
+login();
 
 // تنظيف عند الإغلاق
 process.on('SIGINT', () => {
     console.log('\n👋 إيقاف البوت...');
-    if (workInterval) clearInterval(workInterval);
+    if (messageInterval) clearInterval(messageInterval);
     if (restTimeout) clearTimeout(restTimeout);
+    if (workInterval) clearInterval(workInterval);
     process.exit(0);
 });
 
-process.on('unhandledRejection', error => {
+process.on('SIGTERM', () => {
+    console.log('\n👋 تم استلام SIGTERM - إيقاف البوت...');
+    if (messageInterval) clearInterval(messageInterval);
+    if (restTimeout) clearTimeout(restTimeout);
+    if (workInterval) clearInterval(workInterval);
+    process.exit(0);
+});
+
+process.on('unhandledRejection', (error) => {
     console.error('❌ خطأ غير متوقع:', error.message);
 });
