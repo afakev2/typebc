@@ -1,18 +1,31 @@
 const { Client } = require('discord.js-selfbot-v13');
 const client = new Client();
 
+// 🔥 إضافة خادم HTTP وهمي لـ Render
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+    res.send('Discord Self Bot is running!');
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 وهمي خادم HTTP يعمل على المنفذ ${PORT}`);
+});
+
 // المتغيرات من Render Environment
 const TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_ID = process.env.SERVER_ID;
 const ORDERS_CHANNEL_ID = process.env.ORDERS_CHANNEL_ID;
-const COMMANDS_CHANNEL_ID = process.env.COMMANDS_CHANNEL_ID || ORDERS_CHANNEL_ID; // نفس الروم أو روم منفصل
+const COMMANDS_CHANNEL_ID = process.env.COMMANDS_CHANNEL_ID || ORDERS_CHANNEL_ID;
 
-// تخزين البيانات
-const userLastOrders = new Map();
+// باقي الكود كما هو...
 let botActive = true;
-let intervalTime = 30 * 60 * 1000; // 30 دقيقة افتراضي
+let intervalTime = 30 * 60 * 1000;
 let checkInterval = null;
-let triggerWord = null; // كلمة محددة للتفعيل
+let triggerWord = null;
+const userLastOrders = new Map();
 
 client.on('ready', async () => {
     console.log(`✅ تم تسجيل الدخول كـ ${client.user.tag}`);
@@ -36,19 +49,15 @@ function startInterval() {
 
 // دالة التحقق من الكلمة المحددة
 function checkTriggerWord(content) {
-    if (!triggerWord) return true; // إذا ما في كلمة محددة، كل الرسائل مقبولة
+    if (!triggerWord) return true;
     return content.toLowerCase().includes(triggerWord.toLowerCase());
 }
 
 // مراقبة الرسائل الجديدة
 client.on('messageCreate', async (message) => {
-    // تجاهل رسائل البوت نفسه
     if (message.author.id === client.user.id) return;
-    
-    // تحقق من السيرفر المحدد فقط
     if (message.guild?.id !== SERVER_ID) return;
     
-    // التحقق من أوامر التحكم (في روم الأوامر)
     if (message.channel.id === COMMANDS_CHANNEL_ID) {
         if (message.content.startsWith('!')) {
             await handleCommand(message);
@@ -56,9 +65,7 @@ client.on('messageCreate', async (message) => {
         }
     }
     
-    // تخزين الأوامر فقط إذا البوت نشط وفي روم الطلبات
     if (message.channel.id === ORDERS_CHANNEL_ID && botActive) {
-        // تحقق من الكلمة المحددة
         if (!checkTriggerWord(message.content)) return;
         
         const userOrders = userLastOrders.get(message.author.id) || [];
@@ -69,7 +76,6 @@ client.on('messageCreate', async (message) => {
             authorTag: message.author.tag
         });
         
-        // الاحتفاظ بآخر 20 أمر فقط لكل مستخدم
         if (userOrders.length > 20) {
             userOrders.shift();
         }
@@ -84,7 +90,6 @@ async function handleCommand(message) {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
     
-    // أمر المساعدة
     if (command === 'help' || command === 'h') {
         const helpMsg = `
 **📋 أوامر التحكم في البوت:**
@@ -94,7 +99,6 @@ async function handleCommand(message) {
 ⏱️ **!time [عدد] [وحدة]** - تغيير وقت التكرار
    مثال: !time 15 دقيقة
    مثال: !time 45 ثانية
-   مثال: !time 2 ساعة
 
 🔤 **!word [كلمة]** - تحديد كلمة معينة للتخزين
    مثال: !word بيتزا
@@ -111,7 +115,6 @@ async function handleCommand(message) {
         await message.reply(helpMsg);
     }
     
-    // أمر تشغيل البوت
     else if (command === 'start') {
         if (!botActive) {
             botActive = true;
@@ -122,7 +125,6 @@ async function handleCommand(message) {
         }
     }
     
-    // أمر إيقاف البوت
     else if (command === 'stop') {
         if (botActive) {
             botActive = false;
@@ -133,10 +135,9 @@ async function handleCommand(message) {
         }
     }
     
-    // أمر تغيير الوقت
     else if (command === 'time') {
         if (args.length < 2) {
-            await message.reply('❌ **استخدم: !time [رقم] [دقيقة/ثانية/ساعة]**\nمثال: !time 15 دقيقة');
+            await message.reply('❌ **استخدم: !time [رقم] [دقيقة/ثانية]**\nمثال: !time 15 دقيقة');
             return;
         }
         
@@ -153,35 +154,28 @@ async function handleCommand(message) {
             newTime = value * 60 * 1000;
         } else if (unit.includes('ثانية') || unit.includes('ثانيه') || unit === 'ث') {
             newTime = value * 1000;
-        } else if (unit.includes('ساعة') || unit.includes('ساعه') || unit === 'س') {
-            newTime = value * 60 * 60 * 1000;
         } else {
-            await message.reply('❌ **وحدة غير صحيحة. استخدم: دقيقة / ثانية / ساعة**');
+            await message.reply('❌ **وحدة غير صحيحة. استخدم: دقيقة / ثانية**');
             return;
         }
         
         intervalTime = newTime;
         startInterval();
         
-        const timeDisplay = unit.includes('ث') ? `${value} ثانية` : 
-                           unit.includes('د') ? `${value} دقيقة` : 
-                           `${value} ساعة`;
-        
+        const timeDisplay = unit.includes('ث') ? `${value} ثانية` : `${value} دقيقة`;
         await message.reply(`✅ **تم تغيير وقت التكرار إلى ${timeDisplay}**`);
     }
     
-    // أمر تحديد كلمة
     else if (command === 'word') {
         if (args.length === 0 || args[0] === 'none') {
             triggerWord = null;
             await message.reply('✅ **تم إلغاء تحديد الكلمة. سيتم تخزين جميع الرسائل**');
         } else {
             triggerWord = args.join(' ');
-            await message.reply(`✅ **تم تحديد الكلمة: "${triggerWord}"**\nسيتم تخزين الرسائل التي تحتوي على هذه الكلمة فقط`);
+            await message.reply(`✅ **تم تحديد الكلمة: "${triggerWord}"**`);
         }
     }
     
-    // أمر عرض الحالة
     else if (command === 'status') {
         const totalOrders = Array.from(userLastOrders.values()).reduce((acc, orders) => acc + orders.length, 0);
         const uniqueUsers = userLastOrders.size;
@@ -194,19 +188,16 @@ async function handleCommand(message) {
 🔤 **الكلمة المحددة:** ${triggerWord || 'جميع الرسائل'}
 📝 **إجمالي الأوامر المخزنة:** ${totalOrders}
 👥 **عدد المستخدمين:** ${uniqueUsers}
-📢 **روم الطلبات:** <#${ORDERS_CHANNEL_ID}>
-⚙️ **روم الأوامر:** <#${COMMANDS_CHANNEL_ID}>
+🌐 **حالة الخادم:** متصل
 `;
         await message.reply(statusMsg);
     }
     
-    // أمر مسح الأوامر
     else if (command === 'clear') {
         userLastOrders.clear();
         await message.reply('🧹 **تم مسح جميع الأوامر المخزنة**');
     }
     
-    // أمر عرض آخر الأوامر
     else if (command === 'list') {
         if (userLastOrders.size === 0) {
             await message.reply('📭 **لا توجد أوامر مخزنة**');
@@ -244,7 +235,6 @@ async function resendOrders() {
         const now = Date.now();
         const timeAgo = now - intervalTime;
         
-        // تجميع جميع الأوامر من آخر فترة
         let ordersToResend = [];
         
         userLastOrders.forEach((orders, userId) => {
@@ -259,7 +249,6 @@ async function resendOrders() {
             return;
         }
         
-        // إنشاء رسالة موحدة
         let messageContent = `🔄 **إعادة إرسال أوامر آخر ${intervalTime/60000} دقيقة**\n`;
         if (triggerWord) messageContent += `🔤 **الكلمة المحددة:** ${triggerWord}\n`;
         messageContent += '\n';
@@ -269,7 +258,6 @@ async function resendOrders() {
             messageContent += `**[${time}] ${order.authorTag}:** ${order.content}\n`;
         });
         
-        // تقسيم الرسالة إذا كانت طويلة
         if (messageContent.length > 2000) {
             const chunks = messageContent.match(/.{1,1900}/g) || [];
             for (const chunk of chunks) {
