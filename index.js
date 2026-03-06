@@ -1,6 +1,7 @@
 const { Client } = require('discord.js-selfbot-v13');
 const config = require('./config.js');
 const client = new Client();
+
 // المتغيرات من Render Environment
 config.TOKEN = process.env.DISCORD_TOKEN;
 config.SERVER_ID = process.env.SERVER_ID;
@@ -15,7 +16,6 @@ if (!config.TOKEN || !config.SERVER_ID || !config.ORDERS_CHANNEL_ID) {
 
 // متغيرات التحكم
 let isActive = true;
-let workInterval = null;
 let restTimeout = null;
 let messageInterval = null;
 
@@ -137,7 +137,6 @@ process.on('SIGINT', () => {
     console.log('\n👋 إيقاف البوت...');
     if (messageInterval) clearInterval(messageInterval);
     if (restTimeout) clearTimeout(restTimeout);
-    if (workInterval) clearInterval(workInterval);
     process.exit(0);
 });
 
@@ -145,10 +144,14 @@ process.on('SIGTERM', () => {
     console.log('\n👋 تم استلام SIGTERM - إيقاف البوت...');
     if (messageInterval) clearInterval(messageInterval);
     if (restTimeout) clearTimeout(restTimeout);
-    if (workInterval) clearInterval(workInterval);
     process.exit(0);
 });
 
 process.on('unhandledRejection', (error) => {
     console.error('❌ خطأ غير متوقع:', error.message);
 });
+
+// هذا السطر مهم جداً - يمنع إغلاق البوت
+setInterval(() => {
+    console.log('💓 نبض القلب: البوت لا يزال يعمل...');
+}, 60000); // كل دقيقة
