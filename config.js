@@ -7,7 +7,7 @@ module.exports = {
     BOT_WORD: "-كت",
 
     // وقت إعادة الإرسال بالثواني
-    RESEND_TIME_SECONDS: 1800, // 1800 ثانية = 30 دقيقة
+    RESEND_TIME_SECONDS: 1140, // 1800 ثانية = 30 دقيقة
     
     // إعدادات الإيقاف التلقائي للحماية
     AUTO_STOP: {
