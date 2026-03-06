@@ -2,12 +2,13 @@ FROM node:18-slim
 
 WORKDIR /app
 
-# تثبيت الاعتماديات
 COPY package*.json ./
 RUN npm install
 
-# نسخ الملفات
 COPY . .
 
+# تجاهل مشكلة المنفذ
+ENV PORT=10000
+
 # تشغيل البوت
-CMD ["npm", "start"]
+CMD ["sh", "-c", "node index.js & while true; do sleep 1000; done"]
