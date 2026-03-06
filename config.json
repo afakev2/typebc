@@ -1,0 +1,23 @@
+{
+    "bot_settings": {
+        "auto_shutdown": {
+            "enabled": true,
+            "shutdown_after_minutes": 60,
+            "shutdown_message": "🛑 البوت متوقف للحماية من الكشف - سيتم إعادة التشغيل تلقائياً"
+        },
+        "resend_timing": {
+            "minutes": 30,
+            "seconds": 0,
+            "total_seconds": 1800
+        },
+        "commands": {
+            "save_word": "احفظ",
+            "resend_command": "اعد الارسال",
+            "status_command": "حالة البوت"
+        },
+        "saved_word": {
+            "word": "",
+            "last_updated": ""
+        }
+    }
+}
