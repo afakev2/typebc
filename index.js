@@ -1,7 +1,11 @@
+require('./keep_alive.js');  // <-- أضف هذا السطر
+
 const { Client } = require('discord.js-selfbot-v13');
 const config = require('./config.js');
 const client = new Client();
-
+const { Client } = require('discord.js-selfbot-v13');
+const config = require('./config.js');
+const client = new Client();
 // المتغيرات من Render Environment
 config.TOKEN = process.env.DISCORD_TOKEN;
 config.SERVER_ID = process.env.SERVER_ID;
