@@ -2,9 +2,14 @@ FROM node:18-slim
 
 WORKDIR /app
 
+# نسخ ملفات package أولاً لتحسين caching
 COPY package*.json ./
-RUN npm install
 
+# تثبيت dependencies
+RUN npm install --production
+
+# نسخ باقي الملفات
 COPY . .
 
-CMD ["npm", "start"]
+# تشغيل البوت مع إعادة التشغيل التلقائي
+CMD ["node", "index.js"]
