@@ -1,95 +1,101 @@
 const { Client } = require('discord.js-selfbot-v13');
-const client = new Client();
-
-// إضافة خادم HTTP وهمي لـ Render
 const express = require('express');
+
+// إعداد خادم HTTP
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get('/', (req, res) => {
-    res.send('Discord Self Bot is running!');
+    res.json({
+        status: 'running',
+        timestamp: new Date().toISOString(),
+        bot: 'Discord Self Bot'
+    });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 خادم HTTP وهمي يعمل على المنفذ ${PORT}`);
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        botConnected: client?.isReady() || false,
+        uptime: process.uptime()
+    });
 });
 
-// المتغيرات من Render Environment
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 HTTP server running on port ${PORT}`);
+});
+
+// معالجة إغلاق الخادم
+process.on('SIGTERM', () => {
+    console.log('📥 SIGTERM received, closing gracefully...');
+    server.close(() => {
+        console.log('🛑 HTTP server closed');
+        process.exit(0);
+    });
+});
+
+// متغيرات البيئة
 const TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_ID = process.env.SERVER_ID;
 const ORDERS_CHANNEL_ID = process.env.ORDERS_CHANNEL_ID;
 const COMMANDS_CHANNEL_ID = process.env.COMMANDS_CHANNEL_ID || ORDERS_CHANNEL_ID;
 
+// التحقق من المتغيرات
+if (!TOKEN || !SERVER_ID || !ORDERS_CHANNEL_ID) {
+    console.error('❌ Missing required environment variables');
+    process.exit(1);
+}
+
+const client = new Client({
+    checkUpdate: false,
+    readyStatus: 'dnd'
+});
+
 // تخزين البيانات
 const userLastOrders = new Map();
 let botActive = true;
-let intervalTime = 30 * 60 * 1000; // 30 دقيقة افتراضي
+let intervalTime = 30 * 60 * 1000; // 30 دقيقة
 let checkInterval = null;
 let triggerWord = null;
 
 client.on('ready', async () => {
-    console.log(`✅ تم تسجيل الدخول كـ ${client.user.tag}`);
-    console.log(`📋 سيرفر محدد: ${SERVER_ID}`);
-    console.log(`📢 روم الطلبات: ${ORDERS_CHANNEL_ID}`);
-    console.log(`⚙️ روم الأوامر: ${COMMANDS_CHANNEL_ID}`);
-    console.log(`🔧 البوت جاهز لاستقبال الأوامر في <#${COMMANDS_CHANNEL_ID}>`);
+    console.log(`✅ Logged in as ${client.user.tag}`);
+    console.log(`📋 Server ID: ${SERVER_ID}`);
+    console.log(`📢 Orders Channel: ${ORDERS_CHANNEL_ID}`);
     
     startInterval();
-    
-    // إرسال رسالة تأكيد في روم الأوامر
-    try {
-        const channel = await client.channels.fetch(COMMANDS_CHANNEL_ID);
-        if (channel) {
-            await channel.send('🟢 **البوت جاهز للعمل!** استخدم `!help` لعرض الأوامر');
-        }
-    } catch (error) {
-        console.error('❌ خطأ في إرسال رسالة الترحيب:', error);
-    }
 });
 
-// بدء التكرار
 function startInterval() {
     if (checkInterval) clearInterval(checkInterval);
     checkInterval = setInterval(async () => {
         if (botActive) {
-            await resendOrders();
+            try {
+                await resendOrders();
+            } catch (error) {
+                console.error('❌ Error in interval:', error);
+            }
         }
     }, intervalTime);
-    console.log(`⏱️ تم ضبط التكرار كل ${intervalTime/60000} دقيقة`);
+    console.log(`⏱️ Interval set to ${intervalTime/60000} minutes`);
 }
 
-// دالة التحقق من الكلمة المحددة
 function checkTriggerWord(content) {
     if (!triggerWord) return true;
     return content.toLowerCase().includes(triggerWord.toLowerCase());
 }
 
-// مراقبة جميع الرسائل
 client.on('messageCreate', async (message) => {
     try {
-        // تجاهل رسائل البوت نفسه
         if (message.author.id === client.user.id) return;
+        if (message.guild?.id !== SERVER_ID) return;
         
-        // تحقق من السيرفر المحدد فقط
-        if (message.guild?.id !== SERVER_ID) {
-            console.log(`🚫 رسالة من سيرفر آخر: ${message.guild?.name || 'خاص'}`);
+        if (message.channel.id === COMMANDS_CHANNEL_ID && message.content.startsWith('!')) {
+            await handleCommand(message);
             return;
         }
         
-        console.log(`📨 رسالة من ${message.author.tag} في <#${message.channel.id}>: ${message.content.substring(0, 50)}`);
-        
-        // التحقق من أوامر التحكم (في أي روم محدد للأوامر)
-        if (message.channel.id === COMMANDS_CHANNEL_ID) {
-            if (message.content.startsWith('!')) {
-                console.log(`⚡ أمر مستلم: ${message.content}`);
-                await handleCommand(message);
-                return;
-            }
-        }
-        
-        // تخزين الأوامر فقط إذا البوت نشط وفي روم الطلبات
         if (message.channel.id === ORDERS_CHANNEL_ID && botActive) {
-            // تحقق من الكلمة المحددة
             if (!checkTriggerWord(message.content)) return;
             
             const userOrders = userLastOrders.get(message.author.id) || [];
@@ -100,246 +106,216 @@ client.on('messageCreate', async (message) => {
                 authorTag: message.author.tag
             });
             
-            // الاحتفاظ بآخر 20 أمر فقط لكل مستخدم
-            if (userOrders.length > 20) {
-                userOrders.shift();
-            }
-            
+            if (userOrders.length > 20) userOrders.shift();
             userLastOrders.set(message.author.id, userOrders);
-            console.log(`📝 تم تخزين أمر من ${message.author.tag}`);
+            console.log(`📝 New order from ${message.author.tag}`);
         }
     } catch (error) {
-        console.error('❌ خطأ في معالجة الرسالة:', error);
+        console.error('❌ Error in message handler:', error);
     }
 });
 
-// معالجة الأوامر
 async function handleCommand(message) {
-    try {
-        const args = message.content.slice(1).trim().split(/ +/);
-        const command = args.shift().toLowerCase();
-        
-        console.log(`🔧 تنفيذ الأمر: ${command}`);
-        
-        // أمر المساعدة
-        if (command === 'help' || command === 'h') {
+    const args = message.content.slice(1).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
+    
+    const commands = {
+        help: () => {
             const helpMsg = `
-**📋 أوامر التحكم في البوت:**
+**📋 Commands:**
 
-🟢 **!start** - تشغيل البوت
-🔴 **!stop** - إيقاف البوت
-⏱️ **!time [عدد] [وحدة]** - تغيير وقت التكرار
-   مثال: !time 15 دقيقة
-   مثال: !time 45 ثانية
+🟢 **!start** - Start bot
+🔴 **!stop** - Stop bot
+⏱️ **!time [number] [min/sec]** - Change interval
+   Example: !time 15 min
+   Example: !time 30 sec
 
-🔤 **!word [كلمة]** - تحديد كلمة معينة للتخزين
-   مثال: !word بيتزا
-   مثال: !word none - إلغاء التحديد
+🔤 **!word [word]** - Set trigger word
+   Example: !word pizza
+   Example: !word none - Remove trigger
 
-📊 **!status** - عرض حالة البوت
-🧹 **!clear** - مسح جميع الأوامر المخزنة
-📋 **!list** - عرض آخر 10 أوامر
-🔄 **!test** - اختبار البوت
+📊 **!status** - Bot status
+🧹 **!clear** - Clear stored orders
+📋 **!list** - Show last 10 orders
 
-⚡ **الوقت الحالي:** ${intervalTime/60000} دقيقة
-🔘 **الحالة:** ${botActive ? '🟢 نشط' : '🔴 متوقف'}
-🔤 **الكلمة المحددة:** ${triggerWord || 'لا يوجد'}
+⚡ **Current time:** ${intervalTime/60000} min
+🔘 **Status:** ${botActive ? '🟢 Active' : '🔴 Stopped'}
+🔤 **Trigger word:** ${triggerWord || 'none'}
 `;
-            await message.reply(helpMsg);
-            console.log('✅ تم إرسال رسالة المساعدة');
-        }
+            return message.reply(helpMsg);
+        },
         
-        // أمر تشغيل البوت
-        else if (command === 'start') {
+        start: () => {
             if (!botActive) {
                 botActive = true;
-                await message.reply('✅ **تم تشغيل البوت**');
-                console.log('🟢 البوت نشط');
-            } else {
-                await message.reply('⚠️ **البوت يعمل بالفعل**');
+                return message.reply('✅ **Bot started**');
             }
-        }
+            return message.reply('⚠️ **Bot already running**');
+        },
         
-        // أمر إيقاف البوت
-        else if (command === 'stop') {
+        stop: () => {
             if (botActive) {
                 botActive = false;
-                await message.reply('⏸️ **تم إيقاف البوت**');
-                console.log('🔴 البوت متوقف');
-            } else {
-                await message.reply('⚠️ **البوت متوقف بالفعل**');
+                return message.reply('⏸️ **Bot stopped**');
             }
-        }
+            return message.reply('⚠️ **Bot already stopped**');
+        },
         
-        // أمر تغيير الوقت
-        else if (command === 'time') {
+        time: () => {
             if (args.length < 2) {
-                await message.reply('❌ **استخدم: !time [رقم] [دقيقة/ثانية]**\nمثال: !time 15 دقيقة');
-                return;
+                return message.reply('❌ **Usage: !time [number] [min/sec]**');
             }
             
             const value = parseInt(args[0]);
             const unit = args[1].toLowerCase();
             
             if (isNaN(value) || value < 5) {
-                await message.reply('❌ **الرجاء إدخال رقم صحيح أكبر من 5**');
-                return;
+                return message.reply('❌ **Number must be greater than 5**');
             }
             
             let newTime;
-            if (unit.includes('دقيقة') || unit.includes('دقيقه') || unit === 'د') {
+            if (unit.startsWith('min')) {
                 newTime = value * 60 * 1000;
-            } else if (unit.includes('ثانية') || unit.includes('ثانيه') || unit === 'ث') {
+            } else if (unit.startsWith('sec')) {
                 newTime = value * 1000;
             } else {
-                await message.reply('❌ **وحدة غير صحيحة. استخدم: دقيقة / ثانية**');
-                return;
+                return message.reply('❌ **Use: min or sec**');
             }
             
             intervalTime = newTime;
             startInterval();
-            
-            const timeDisplay = unit.includes('ث') ? `${value} ثانية` : `${value} دقيقة`;
-            await message.reply(`✅ **تم تغيير وقت التكرار إلى ${timeDisplay}**`);
-        }
+            return message.reply(`✅ **Interval changed to ${value} ${unit}**`);
+        },
         
-        // أمر تحديد كلمة
-        else if (command === 'word') {
-            if (args.length === 0 || args[0] === 'none') {
+        word: () => {
+            if (!args.length || args[0] === 'none') {
                 triggerWord = null;
-                await message.reply('✅ **تم إلغاء تحديد الكلمة. سيتم تخزين جميع الرسائل**');
-            } else {
-                triggerWord = args.join(' ');
-                await message.reply(`✅ **تم تحديد الكلمة: "${triggerWord}"**\nسيتم تخزين الرسائل التي تحتوي على هذه الكلمة فقط`);
+                return message.reply('✅ **Trigger word removed - all messages accepted**');
             }
-        }
+            triggerWord = args.join(' ');
+            return message.reply(`✅ **Trigger word set to: "${triggerWord}"**`);
+        },
         
-        // أمر عرض الحالة
-        else if (command === 'status') {
+        status: () => {
             const totalOrders = Array.from(userLastOrders.values()).reduce((acc, orders) => acc + orders.length, 0);
             const uniqueUsers = userLastOrders.size;
             
             const statusMsg = `
-**📊 حالة البوت:**
+**📊 Bot Status:**
 
-🟢 **الحالة:** ${botActive ? 'نشط' : 'متوقف'}
-⏱️ **وقت التكرار:** ${intervalTime/60000} دقيقة
-🔤 **الكلمة المحددة:** ${triggerWord || 'جميع الرسائل'}
-📝 **إجمالي الأوامر المخزنة:** ${totalOrders}
-👥 **عدد المستخدمين:** ${uniqueUsers}
-📢 **روم الطلبات:** <#${ORDERS_CHANNEL_ID}>
-⚙️ **روم الأوامر:** <#${COMMANDS_CHANNEL_ID}>
-🌐 **حالة الخادم:** متصل
+🟢 **Status:** ${botActive ? 'Active' : 'Stopped'}
+⏱️ **Interval:** ${intervalTime/60000} min
+🔤 **Trigger word:** ${triggerWord || 'all messages'}
+📝 **Total orders:** ${totalOrders}
+👥 **Users:** ${uniqueUsers}
+🌐 **HTTP:** Running on port ${PORT}
 `;
-            await message.reply(statusMsg);
-        }
+            return message.reply(statusMsg);
+        },
         
-        // أمر مسح الأوامر
-        else if (command === 'clear') {
+        clear: () => {
             userLastOrders.clear();
-            await message.reply('🧹 **تم مسح جميع الأوامر المخزنة**');
-        }
+            return message.reply('🧹 **All orders cleared**');
+        },
         
-        // أمر عرض آخر الأوامر
-        else if (command === 'list') {
+        list: () => {
             if (userLastOrders.size === 0) {
-                await message.reply('📭 **لا توجد أوامر مخزنة**');
-                return;
+                return message.reply('📭 **No orders stored**');
             }
             
-            let listMsg = '**📋 آخر 10 أوامر:**\n\n';
+            let listMsg = '**📋 Last 10 orders:**\n\n';
             const allOrders = [];
             
-            userLastOrders.forEach((orders, userId) => {
-                orders.forEach(order => {
-                    allOrders.push(order);
-                });
+            userLastOrders.forEach(orders => {
+                orders.forEach(order => allOrders.push(order));
             });
             
             allOrders.sort((a, b) => b.timestamp - a.timestamp);
             const recentOrders = allOrders.slice(0, 10);
             
             recentOrders.forEach(order => {
-                const time = new Date(order.timestamp).toLocaleTimeString('ar-EG');
+                const time = new Date(order.timestamp).toLocaleTimeString();
                 listMsg += `**[${time}] ${order.authorTag}:** ${order.content}\n`;
             });
             
-            await message.reply(listMsg);
+            return message.reply(listMsg);
         }
-        
-        // أمر اختبار
-        else if (command === 'test') {
-            await message.reply('✅ **البوت يعمل بشكل طبيعي!**');
-        }
-        
-        // أمر غير معروف
-        else {
-            await message.reply(`❌ أمر غير معروف. استخدم \`!help\` لعرض الأوامر المتاحة`);
-        }
-        
-    } catch (error) {
-        console.error('❌ خطأ في تنفيذ الأمر:', error);
-        await message.reply('❌ حدث خطأ في تنفيذ الأمر').catch(e => console.log('فشل إرسال رسالة الخطأ'));
+    };
+    
+    if (commands[command]) {
+        await commands[command]();
     }
 }
 
-// دالة إعادة إرسال الأوامر
 async function resendOrders() {
-    try {
-        const channel = await client.channels.fetch(ORDERS_CHANNEL_ID);
-        if (!channel) return;
-        
-        const now = Date.now();
-        const timeAgo = now - intervalTime;
-        
-        // تجميع جميع الأوامر من آخر فترة
-        let ordersToResend = [];
-        
-        userLastOrders.forEach((orders, userId) => {
-            const recentOrders = orders.filter(order => order.timestamp >= timeAgo);
-            ordersToResend = ordersToResend.concat(recentOrders);
-        });
-        
-        ordersToResend.sort((a, b) => a.timestamp - b.timestamp);
-        
-        if (ordersToResend.length === 0) {
-            console.log('⏳ لا توجد أوامر جديدة لإعادة إرسالها');
-            return;
-        }
-        
-        // إنشاء رسالة موحدة
-        let messageContent = `🔄 **إعادة إرسال أوامر آخر ${intervalTime/60000} دقيقة**\n`;
-        if (triggerWord) messageContent += `🔤 **الكلمة المحددة:** ${triggerWord}\n`;
-        messageContent += '\n';
-        
-        ordersToResend.forEach(order => {
-            const time = new Date(order.timestamp).toLocaleTimeString('ar-EG');
-            messageContent += `**[${time}] ${order.authorTag}:** ${order.content}\n`;
-        });
-        
-        // تقسيم الرسالة إذا كانت طويلة
-        if (messageContent.length > 2000) {
-            const chunks = messageContent.match(/.{1,1900}/g) || [];
-            for (const chunk of chunks) {
-                await channel.send(chunk);
-            }
-        } else {
-            await channel.send(messageContent);
-        }
-        
-        console.log(`✅ تم إعادة إرسال ${ordersToResend.length} أمر`);
-        
-    } catch (error) {
-        console.error('❌ خطأ في إعادة إرسال الأوامر:', error);
+    const channel = await client.channels.fetch(ORDERS_CHANNEL_ID);
+    if (!channel) return;
+    
+    const now = Date.now();
+    const timeAgo = now - intervalTime;
+    
+    let ordersToResend = [];
+    userLastOrders.forEach(orders => {
+        const recent = orders.filter(o => o.timestamp >= timeAgo);
+        ordersToResend = ordersToResend.concat(recent);
+    });
+    
+    ordersToResend.sort((a, b) => a.timestamp - b.timestamp);
+    
+    if (!ordersToResend.length) {
+        console.log('⏳ No new orders');
+        return;
     }
+    
+    let content = `🔄 **Orders from last ${intervalTime/60000} min**\n`;
+    if (triggerWord) content += `🔤 **Trigger:** ${triggerWord}\n`;
+    content += '\n';
+    
+    ordersToResend.forEach(order => {
+        const time = new Date(order.timestamp).toLocaleTimeString();
+        content += `**[${time}] ${order.authorTag}:** ${order.content}\n`;
+    });
+    
+    if (content.length > 2000) {
+        const chunks = content.match(/.{1,1900}/g) || [];
+        for (const chunk of chunks) await channel.send(chunk);
+    } else {
+        await channel.send(content);
+    }
+    
+    console.log(`✅ Resent ${ordersToResend.length} orders`);
 }
 
-// تسجيل الدخول
-client.login(TOKEN).catch(err => {
-    console.error('❌ فشل تسجيل الدخول:', err);
+// تسجيل الدخول مع إعادة المحاولة
+async function loginWithRetry(retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await client.login(TOKEN);
+            console.log('✅ Discord client logged in');
+            return;
+        } catch (error) {
+            console.error(`❌ Login attempt ${i + 1} failed:`, error.message);
+            if (i < retries - 1) {
+                console.log('⏳ Retrying in 5 seconds...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+    }
+    console.error('❌ All login attempts failed');
     process.exit(1);
+}
+
+loginWithRetry();
+
+// معالجة الأخطاء
+process.on('unhandledRejection', (error) => {
+    console.error('❌ Unhandled rejection:', error);
 });
 
-process.on('unhandledRejection', error => {
-    console.error('❌ خطأ غير معالج:', error);
+process.on('SIGINT', () => {
+    console.log('📥 SIGINT received, closing...');
+    if (checkInterval) clearInterval(checkInterval);
+    client.destroy();
+    server.close();
+    process.exit(0);
 });
