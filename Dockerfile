@@ -7,8 +7,5 @@ RUN npm install
 
 COPY . .
 
-# تجاهل مشكلة المنفذ
-ENV PORT=10000
-
-# تشغيل البوت
-CMD ["sh", "-c", "node index.js & while true; do sleep 1000; done"]
+# لا نحتاج منفذ لأنها Worker service
+CMD ["node", "index.js"]
