@@ -15,6 +15,6 @@ module.exports = {
     },
     
     // إعدادات السيرفر والروم (اختياري - يمكن وضعها في متغيرات Render)
-    DEFAULT_SERVER_ID: "1058648328558088242",
-    DEFAULT_CHANNEL_ID: "1122121488452026388"
+    DEFAULT_SERVER_ID: "",
+    DEFAULT_CHANNEL_ID: ""
 };
