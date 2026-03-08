@@ -17,9 +17,12 @@ app.get('/status', (req, res) => {
     res.json({
         bot: 'discord-self-bot',
         active: isActive,
+        workMode: workMode,
         uptime: process.uptime(),
         lastMessage: lastMessageTime ? new Date(lastMessageTime).toLocaleString('ar-EG') : 'لم يرسل بعد',
-        nextMessage: nextMessageTime ? new Date(nextMessageTime).toLocaleString('ar-EG') : 'غير معروف'
+        nextMessage: nextMessageTime ? new Date(nextMessageTime).toLocaleString('ar-EG') : 'غير معروف',
+        workEndTime: workEndTime ? new Date(workEndTime).toLocaleString('ar-EG') : 'غير معروف',
+        restEndTime: restEndTime ? new Date(restEndTime).toLocaleString('ar-EG') : 'غير معروف'
     });
 });
 
@@ -27,7 +30,6 @@ app.get('/status', (req, res) => {
 const server = http.createServer(app);
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 منفذ وهمي مفتوح على: ${PORT}`);
-    console.log(`🔗 Render يعتقد أن الخدمة ويب - تم الخداع بنجاح!`);
 });
 
 // ========== باقي كود البوت ==========
@@ -37,30 +39,37 @@ const client = new Client();
 // استيراد الإعدادات من config.js
 const CONFIG = require('./config.js');
 
-// المتغيرات من Render (أو من config إذا لم توجد)
+// المتغيرات من Render
 const TOKEN = process.env.DISCORD_TOKEN;
 const SERVER_ID = process.env.SERVER_ID || CONFIG.DEFAULT_SERVER_ID;
 const ORDERS_CHANNEL_ID = process.env.ORDERS_CHANNEL_ID || CONFIG.DEFAULT_CHANNEL_ID;
 
 // متغيرات لتتبع الحالة
 let isActive = true;
-let restTimeout = null;
+let workMode = 'working'; // 'working' أو 'resting'
 let messageInterval = null;
 let lastMessageTime = null;
 let nextMessageTime = null;
+let workEndTime = null;
+let restEndTime = null;
 
 // التحقق من التوكن
 if (!TOKEN) {
     console.error('❌ خطأ: DISCORD_TOKEN غير موجود');
-    console.error('📌 الرجاء إضافة التوكن في متغيرات Render');
+    process.exit(1);
+}
+
+// التحقق من الإعدادات
+if (!SERVER_ID || !ORDERS_CHANNEL_ID) {
+    console.error('❌ خطأ: SERVER_ID أو ORDERS_CHANNEL_ID غير موجود');
     process.exit(1);
 }
 
 // دالة إرسال الكلمة
 async function sendWord() {
     try {
-        if (!isActive) {
-            console.log('⏸️ البوت في وضع الراحة');
+        if (workMode === 'resting') {
+            console.log(`⏸️ [${new Date().toLocaleTimeString('ar-EG')}] في وضع الراحة - لن يتم الإرسال`);
             return;
         }
 
@@ -82,17 +91,18 @@ async function sendWord() {
         nextMessageTime = new Date(now.getTime() + (CONFIG.RESEND_TIME_SECONDS * 1000));
         
         console.log(`✅ [${now.toLocaleTimeString('ar-EG')}] تم إرسال: "${CONFIG.BOT_WORD}"`);
-        console.log(`⏱️ الرسالة القادمة: ${nextMessageTime.toLocaleTimeString('ar-EG')}`);
         
     } catch (error) {
         console.error('❌ خطأ في الإرسال:', error.message);
     }
 }
 
-// نظام الحماية (ايقاف تلقائي)
+// نظام الحماية المحسن
 function setupAutoStop() {
     if (!CONFIG.AUTO_STOP.ENABLED) {
         console.log('🔄 نظام الحماية معطل - البوت سيعمل باستمرار');
+        workMode = 'working';
+        isActive = true;
         return;
     }
 
@@ -100,27 +110,45 @@ function setupAutoStop() {
     const restMs = CONFIG.AUTO_STOP.REST_TIME_MINUTES * 60 * 1000;
 
     console.log('=================================');
-    console.log('🕐 نظام الحماية:');
+    console.log('🕐 نظام الحماية المحسن:');
     console.log(`   - يعمل: ${CONFIG.AUTO_STOP.WORK_TIME_MINUTES} دقيقة`);
     console.log(`   - يرتاح: ${CONFIG.AUTO_STOP.REST_TIME_MINUTES} دقيقة`);
     console.log('=================================');
 
     function startWork() {
+        workMode = 'working';
         isActive = true;
-        console.log(`▶️ [${new Date().toLocaleTimeString('ar-EG')}] بدء العمل`);
+        const now = new Date();
+        workEndTime = new Date(now.getTime() + workMs);
+        
+        console.log(`▶️ [${now.toLocaleTimeString('ar-EG')}] بدء العمل`);
+        console.log(`⏱️ ينتهي العمل: ${workEndTime.toLocaleTimeString('ar-EG')}`);
+        
+        // إرسال رسالة فورية عند بدء العمل
         sendWord();
-
-        if (restTimeout) clearTimeout(restTimeout);
-        restTimeout = setTimeout(() => {
-            isActive = false;
-            console.log(`⏸️ [${new Date().toLocaleTimeString('ar-EG')}] بدء الراحة لمدة ${CONFIG.AUTO_STOP.REST_TIME_MINUTES} دقيقة`);
-            
-            setTimeout(() => {
-                startWork();
-            }, restMs);
+        
+        // جدولة نهاية العمل
+        setTimeout(() => {
+            startRest();
         }, workMs);
     }
 
+    function startRest() {
+        workMode = 'resting';
+        isActive = false;
+        const now = new Date();
+        restEndTime = new Date(now.getTime() + restMs);
+        
+        console.log(`⏸️ [${now.toLocaleTimeString('ar-EG')}] بدء الراحة لمدة ${CONFIG.AUTO_STOP.REST_TIME_MINUTES} دقيقة`);
+        console.log(`⏱️ تنتهي الراحة: ${restEndTime.toLocaleTimeString('ar-EG')}`);
+        
+        // جدولة نهاية الراحة
+        setTimeout(() => {
+            startWork();
+        }, restMs);
+    }
+
+    // بدء الدورة
     startWork();
 }
 
@@ -136,8 +164,12 @@ client.on('ready', () => {
     console.log(`⏱️ التكرار: كل ${CONFIG.RESEND_TIME_SECONDS} ثانية (${CONFIG.RESEND_TIME_SECONDS / 60} دقيقة)`);
     console.log('=================================');
 
-    // بدء الإرسال المتكرر
-    if (messageInterval) clearInterval(messageInterval);
+    // إلغاء أي إنترفال سابق
+    if (messageInterval) {
+        clearInterval(messageInterval);
+    }
+    
+    // بدء الإرسال المتكرر (كل دقيقة للتأكد من الدقة)
     messageInterval = setInterval(sendWord, CONFIG.RESEND_TIME_SECONDS * 1000);
     
     // تشغيل نظام الحماية
@@ -166,25 +198,40 @@ async function login() {
 
 login();
 
-// نبض القلب - يمنع إغلاق البوت
+// نبض القلب المحسن - يمنع إغلاق البوت ويعرض الحالة بدقة
 setInterval(() => {
-    const status = isActive ? '🟢 يعمل' : '🟡 في الراحة';
-    console.log(`💓 البوت ${status} - ${new Date().toLocaleTimeString('ar-EG')}`);
-}, 60000);
+    const now = new Date();
+    let status = '';
+    let timeInfo = '';
+    
+    if (workMode === 'working') {
+        status = '🟢 يعمل';
+        if (workEndTime) {
+            const remaining = Math.round((workEndTime - now) / 1000 / 60);
+            timeInfo = ` - متبقي: ${remaining} دقيقة`;
+        }
+    } else {
+        status = '🟡 في الراحة';
+        if (restEndTime) {
+            const remaining = Math.round((restEndTime - now) / 1000 / 60);
+            timeInfo = ` - متبقي: ${remaining} دقيقة`;
+        }
+    }
+    
+    console.log(`💓 البوت ${status}${timeInfo} - ${now.toLocaleTimeString('ar-EG')}`);
+}, 30000); // كل 30 ثانية بدلاً من 60 ثانية
 
 // تنظيف عند الإغلاق
 process.on('SIGTERM', () => {
     console.log('👋 جاري إيقاف البوت...');
-    clearInterval(messageInterval);
-    clearTimeout(restTimeout);
+    if (messageInterval) clearInterval(messageInterval);
     server.close();
     process.exit(0);
 });
 
 process.on('SIGINT', () => {
     console.log('👋 جاري إيقاف البوت...');
-    clearInterval(messageInterval);
-    clearTimeout(restTimeout);
+    if (messageInterval) clearInterval(messageInterval);
     server.close();
     process.exit(0);
 });
